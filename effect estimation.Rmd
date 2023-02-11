@@ -1,0 +1,147 @@
+---
+title: "Crossover effect estimation"
+author: "Divya patil"
+date: "2023-02-11"
+output: word_document
+---
+
+```{r}
+#Import the dataset
+data=read.csv("F:\\Statistics\\Msc sem 3\\Practicals\\MCP\\clinical\\BABEDatac.csv",header = F)
+#Let find the PK Parameters. #Tmax: Time at which maximum concentration appears. #Cmax: Maximum concentration. #AUC:Area Under curve (Time Vs Concetration) #AUCinf=portion of remaining area from tk to infinity #ke=elimination rate constant #thalf=time require for concentration to half.
+data1=data[,5:20]
+t=unlist(data1[1,])
+conc=unlist(data1[2,])
+cmax=max(conc)
+a=which.max(conc)
+tmax=t[a]
+k=length(conc)-1
+auc=sum((conc[2:(k+1)]+conc[1:k])*(t[2:(k+1)]-t[1:k])/2)
+ke=-2.303*coefficients(lm(log10(conc[a+1:k+1])~t[a+1:k+1]))[2]
+AUCinf=auc+conc[k+1]/ke
+thalph=0.693/ke
+df=data.frame('c_max'=cmax,'tmax'=tmax,'auct'=auc,'ke'=ke,'aucinf'=AUCinf,'thalf'=thalph)
+#create a fuction for finding pkparameter for 24 subject name as “pkpara”
+pkpara=function(t,conc){
+  cmax=max(conc);cmax
+  a=which.max(conc)
+  tmax=t[a];tmax
+  k=length(conc)-1;k
+  auc=sum((conc[2:(k+1)]+conc[1:k])*(t[2:(k+1)]-t[1:k])/2)
+  ke=-2.303*coefficients(lm(log10(conc[a+1:k+1])~t[a+1:k+1]))[2]
+  AUCinf=auc+conc[k+1]/ke
+  thalph=0.693/ke
+  df=data.frame('c_max'=cmax,'tmax'=tmax,'auct'=auc,'ke'=ke,'aucinf'=AUCinf,'thalf'=thalph);df
+  return(df)
+}
+```
+
+```{r}
+t=unlist(data1[1,])
+conc=unlist(data1[2,])
+pkpara(t,conc)
+#for entire data
+for (i in 2:49){ 
+  df=rbind(df,pkpara(t,unlist(data1[i,])))
+}
+df1=df[2:49,]
+df1
+out=summary(df1)
+out
+#join the seq and period columns to pkpara data
+dff=cbind(data[2:49,1:4],df1)
+colnames(dff)=c(data[1,1:4],colnames(df1))
+View(dff)
+```
+
+```{r}
+#create fuction for calculating anova
+crossanova=function(Y,Seq,Per,Sub){
+
+  df=data.frame(Y,Seq,Per,Sub)
+  y=df[,1]
+  n=length(y)
+  SST=var(y)*(n-1)
+  Y11=df[df$Per==1&df$Seq==1,1];n1=length(Y11); 
+  Y12=df[df$Per==1&df$Seq==2,1];n2=length(Y12); 
+  Y21=df[df$Per==2&df$Seq==1,1];
+  Y22=df[df$Per==2&df$Seq==2,1];
+  
+  df1=data.frame(Y11,Y21)
+  df2=data.frame(Y12,Y22)
+  
+  m=apply(df1,1,var);m
+  m1=apply(df2,1,var);m1
+  sswithin=sum(m)+sum(m1)
+  me=sum((apply(df1,1,mean)-mean(y))^2);me
+  me1=sum((apply(df2,1,mean)-mean(y))^2);me1
+  ssbetween=2*(me+me1)
+  U1=Y11+Y21;# subject total w.r.t. sequence 1
+  U2=Y12+Y22;# subject total w.r.t. sequence 2
+  D1=(Y21-Y11)/2;# period differences for each subject within each sequence 1
+  D2=(Y22-Y12)/2;  # period differences for each subject within each sequence 2
+  O1=D1;O2=-D2;
+  Chat=mean(U2)-mean(U1);Chat
+  Fhat=mean(D1)-mean(D2);Fhat
+  Phat=mean(O1)-mean(O2);Phat
+  sscarry=2*n1*n2/(n1+n2)*Chat^2/4
+  ssdrug=2*n1*n2/(n1+n2)*Fhat^2
+  ssperiod=2*n1*n2/(n1+n2)*Phat^2
+  ssintra=sswithin-ssdrug-ssperiod
+  ssinter=ssbetween-sscarry
+  source1=c("carry","inter","drug","period","intra","Total")
+  df22=c(1,n1+n2-2,1,1,n1+n2-2,2*(n1+n2)-1)
+  ss=c(sscarry,ssinter,ssdrug,ssperiod,ssintra,SST)
+  Msq=ss/df22
+  Fcal=rep(0,6)
+  Fcal[1]=Msq[1]/Msq[2]
+  Fcal[2:4]=Msq[2:4]/Msq[5]
+  Pval=rep(0,6)
+  Pval[1]=1-pf(Fcal[1],df22[1],df22[2])
+  Pval[2:4]=1-pf(Fcal[2:4],df22[2:4],df22[5])
+  return(data.frame("source"=source1,"DF"=df22,"sumofsq"=ss,Fcal,Pval))
+}
+```
+
+```{r}
+#anova corresponding to concentration.
+crossanova(dff$c_max,dff$seq,dff$Per,dff$Sub)
+```
+
+```{r}
+#anova corresponding to timepoint.
+crossanova(dff$tmax,dff$seq,dff$Per,dff$Sub)
+```
+
+```{r}
+#anova corresponding to area under curve to max time.
+crossanova(dff$auct,dff$seq,dff$Per,dff$Sub)
+```
+
+```{r}
+#anova corresponding to elimination rate constant.;
+crossanova(dff$ke,dff$seq,dff$Per,dff$Sub)
+```
+
+```{r}
+#anova corresponding to Area Under Curve Infinity.
+crossanova(dff$aucinf,dff$seq,dff$Per,dff$Sub)
+```
+
+```{r}
+#anova corresponding to t_half.
+crossanova(dff$thalf,dff$seq,dff$Per,dff$Sub)
+```
+
+```{r}
+data_=read.csv("F:\\Statistics\\Msc sem 3\\Practicals\\MCP\\clinical\\BABEDatac.csv",header = T);data_
+
+par(mfrow=c(1,2))
+plot(t,apply(data_[data_$treat==2,5:20],2,mean),type='l',xlab="time",ylab="Average Concentration corresponding Test Drug")
+plot(t,apply(data_[data_$treat==1,5:20],2,mean),type='l',xlab="time",ylab="Average Concentration corresponding Reference Drug")
+```
+
+
+
+
+
